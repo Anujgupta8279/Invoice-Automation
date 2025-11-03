@@ -1,5 +1,6 @@
 streamlit
 pandas
-fpdf
+fpdf2
 os
 base64
+datetime
