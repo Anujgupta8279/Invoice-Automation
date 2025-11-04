@@ -197,4 +197,35 @@ st.subheader("📜 Invoice History")
 if not invoice_history.empty:
     st.dataframe(invoice_history)
 else:
+
     st.info("No invoices generated yet.")
+ # ---------- Invoice History Delete Section ----------
+st.subheader("Remove Invoice")
+
+if not invoice_history.empty:
+    st.dataframe(invoice_history)
+
+    st.markdown("### 🗑 Manage Invoice History")
+    delete_mode = st.radio(
+        "Choose delete option:",
+        ["None", "Delete Selected Invoice", "Clear All History"],
+        horizontal=True
+    )
+
+    if delete_mode == "Delete Selected Invoice":
+        selected_invoice = st.selectbox("Select Invoice No to Delete", invoice_history["invoice_no"].tolist())
+        if st.button("Confirm Delete Invoice"):
+            invoice_history = invoice_history[invoice_history["invoice_no"] != selected_invoice]
+            invoice_history.to_csv("invoice_history.csv", index=False)
+            st.success(f" Invoice {selected_invoice} deleted successfully.")
+            st.rerun()
+
+    elif delete_mode == "Clear All History":
+        if st.button(" Confirm Delete All Invoices"):
+            invoice_history = pd.DataFrame(columns=["invoice_no", "customer_name", "products", "total", "date"])
+            invoice_history.to_csv("invoice_history.csv", index=False)
+            st.success("🧹 All invoice history cleared successfully.")
+            st.rerun()
+
+else:
+    st.info("No invoices delete yet.")
