@@ -1,10 +1,185 @@
 import streamlit as st
 import pandas as pd
-from fpdf import FPDF
-import base64
+import hashlib
+import smtplib
+import random
 import os
 from datetime import datetime
+from fpdf import FPDF
+import base64
 
+# ---------------- EMAIL CONFIG ----------------
+SENDER_EMAIL = "anujgupta9755@gmail.com"         # 👈 your Gmail
+EMAIL_PASSWORD = "ufbvhqsvakeieomv"     # 👈 app password (not Gmail password)
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+# ---------------- USER DATA ----------------
+if os.path.exists("users.csv"):
+    users = pd.read_csv("users.csv")
+else:
+    users = pd.DataFrame(columns=["email", "password_hash"])
+    users.to_csv("users.csv", index=False)
+
+# ---------------- UTILITIES ----------------
+def make_hash(password):
+    return hashlib.sha256(str(password).encode()).hexdigest()
+
+def send_email(to_email, subject, body):
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, EMAIL_PASSWORD)
+            msg = f"Subject: {subject}\n\n{body}"
+            server.sendmail(SENDER_EMAIL, to_email, msg)
+        return True
+    except Exception as e:
+        st.error(f"❌ Email sending failed: {e}")
+        return False
+
+# ---------------- SESSION VARS ----------------
+for key in [
+    "user", "otp_code", "otp_stage", "temp_email", "temp_pass",
+    "reset_stage", "reset_email"
+]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key not in ["otp_stage", "reset_stage"] else False
+
+# ---------------- LOGIN / SIGNUP FIRST ----------------
+if not st.session_state.user:
+    st.title("🔐 Login / Sign Up")
+
+    tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
+
+    # LOGIN TAB
+    with tab_login:
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("Login"):
+                if email in users["email"].values:
+                    stored_hash = users.loc[users["email"] == email, "password_hash"].values[0]
+                    if make_hash(password) == stored_hash:
+                        st.session_state.user = email
+                        st.success(f"✅ Logged in as {email}")
+                        st.rerun()
+                    else:
+                        st.error("❌ Incorrect password.")
+                else:
+                    st.warning("⚠ No account found. Please sign up.")
+
+        with col2:
+            if st.button("Forgot Password?"):
+                if not email:
+                    st.warning("Enter your email first above.")
+                elif email not in users["email"].values:
+                    st.error("Email not registered.")
+                else:
+                    otp = random.randint(100000, 999999)
+                    sent = send_email(email, "Password Reset OTP", f"Your OTP is: {otp}")
+                    if sent:
+                        st.session_state.otp_code = otp
+                        st.session_state.reset_stage = True
+                        st.session_state.reset_email = email
+                        st.info(f"📩 OTP sent to {email}. Enter it below to reset your password.")
+
+    # RESET PASSWORD
+    if st.session_state.reset_stage:
+        st.subheader("🔁 Reset Password")
+        entered_otp = st.text_input("Enter OTP sent to your email")
+        new_pass = st.text_input("New Password", type="password")
+        confirm_pass = st.text_input("Confirm Password", type="password")
+
+        if st.button("Reset Password"):
+            if entered_otp == str(st.session_state.otp_code):
+                if new_pass != confirm_pass:
+                    st.error("Passwords do not match.")
+                elif not new_pass:
+                    st.error("Password cannot be empty.")
+                else:
+                    users.loc[users["email"] == st.session_state.reset_email, "password_hash"] = make_hash(new_pass)
+                    users.to_csv("users.csv", index=False)
+                    st.success("✅ Password reset successful. Please log in again.")
+                    st.session_state.reset_stage = False
+                    st.session_state.reset_email = None
+                    st.session_state.otp_code = None
+            else:
+                st.error("❌ Invalid OTP.")
+
+        if st.button("Cancel Reset"):
+            st.session_state.reset_stage = False
+            st.experimental_rerun()
+
+    # SIGNUP TAB
+    with tab_signup:
+        if not st.session_state.otp_stage:
+            new_email = st.text_input("New Email")
+            new_pass = st.text_input("New Password", type="password")
+            confirm_pass = st.text_input("Confirm Password", type="password")
+
+            if st.button("Send OTP"):
+                if new_email in users["email"].values:
+                    st.warning("⚠ Email already registered.")
+                elif new_pass != confirm_pass:
+                    st.error("❌ Passwords do not match.")
+                elif not new_email or not new_pass:
+                    st.error("Please fill all fields.")
+                else:
+                    otp = random.randint(100000, 999999)
+                    sent = send_email(new_email, "Signup Verification OTP", f"Your OTP is: {otp}")
+                    if sent:
+                        st.session_state.otp_code = otp
+                        st.session_state.temp_email = new_email
+                        st.session_state.temp_pass = new_pass
+                        st.session_state.otp_stage = True
+                        st.info(f"📩 OTP sent to {new_email}. Enter it below to verify.")
+                        st.rerun()
+        else:
+            entered_otp = st.text_input("Enter OTP sent to your email")
+            if st.button("Verify OTP"):
+                if entered_otp == str(st.session_state.otp_code):
+                    email = st.session_state.temp_email
+                    password = st.session_state.temp_pass
+                    users.loc[len(users)] = [email, make_hash(password)]
+                    users.to_csv("users.csv", index=False)
+                    st.success("🎉 Account created successfully! Please log in.")
+                    st.session_state.otp_stage = False
+                    st.session_state.otp_code = None
+                    st.session_state.temp_email = None
+                    st.session_state.temp_pass = None
+                else:
+                    st.error("❌ Incorrect OTP.")
+            if st.button("Resend OTP"):
+                otp = random.randint(100000, 999999)
+                st.session_state.otp_code = otp
+                send_email(st.session_state.temp_email, "Resent OTP", f"Your OTP is: {otp}")
+                st.info("🔁 OTP resent successfully.")
+
+    st.stop()  # Stop app here if not logged in
+
+# ---------------- AFTER LOGIN: INVOICE APP ----------------
+st.sidebar.success(f"✅ Logged in as {st.session_state.user}")
+if st.sidebar.button("🚪 Logout"):
+    st.session_state.user = None
+    st.rerun()
+    # ---- Delete Account ----
+with st.sidebar.expander("⚠ Delete Account"):
+    st.warning("Deleting your account will permanently remove your data.")
+    confirm_delete = st.checkbox("I understand and want to delete my account")
+    if st.button("🗑 Confirm Delete Account"):
+        if confirm_delete:
+            users = users[users["email"] != st.session_state.user]
+            users.to_csv("users.csv", index=False)
+            st.success("🗑 Account deleted successfully.")
+            st.session_state.user = None
+            st.rerun()
+        else:
+            st.info("Please confirm before deleting.")
+    
+    
 # ---------- Load or Create Data ----------
 if os.path.exists("customers.csv"):
     customers = pd.read_csv("customers.csv")
@@ -197,9 +372,9 @@ st.subheader("📜 Invoice History")
 if not invoice_history.empty:
     st.dataframe(invoice_history)
 else:
-
     st.info("No invoices generated yet.")
- # ---------- Invoice History Delete Section ----------
+   
+# ---------- Invoice History Delete Section ----------
 st.subheader("Remove Invoice")
 
 if not invoice_history.empty:
@@ -229,3 +404,4 @@ if not invoice_history.empty:
 
 else:
     st.info("No invoices delete yet.")
+
