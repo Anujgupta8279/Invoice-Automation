@@ -89,10 +89,9 @@ if not st.session_state.user:
     # RESET PASSWORD
     if st.session_state.reset_stage:
         st.subheader("🔁 Reset Password")
-        entered_otp = st.text_input("Enter OTP sent to your email")
-        new_pass = st.text_input("New Password", type="password")
-        confirm_pass = st.text_input("Confirm Password", type="password")
-
+        entered_otp = st.text_input("Enter OTP sent to your email", key="reset_otp")
+        new_pass = st.text_input("New Password", type="password", key="reset_new_pass")
+        confirm_pass = st.text_input("Confirm Password", type="password", key="reset_confirm_pass")
         if st.button("Reset Password"):
             if entered_otp == str(st.session_state.otp_code):
                 if new_pass != confirm_pass:
@@ -106,6 +105,9 @@ if not st.session_state.user:
                     st.session_state.reset_stage = False
                     st.session_state.reset_email = None
                     st.session_state.otp_code = None
+                    st.success("✅ Password reset successful! Please log in again.")
+                    st.rerun()
+
             else:
                 st.error("❌ Invalid OTP.")
 
